@@ -1,6 +1,5 @@
 /// <reference types="@webgpu/types" />
 import { loadShader } from "./shaders"
-import { createUniformBuffer, updateUniformBuffer } from "./buffers"
 import { WebGPURenderer } from "./webGpuRenderer"
 import { World } from "./world"
 
@@ -9,8 +8,12 @@ export class WebGpuManager {
 	private canvas: HTMLCanvasElement
 	private canvasContext: GPUCanvasContext
 	private canvasFormat: GPUCanvasFormat
-	private vertexShaderModule: GPUShaderModule | undefined
-	private fragmentShaderModule: GPUShaderModule | undefined
+	private rasterVertexShaderModule: GPUShaderModule | undefined
+	private rasterFragmentShaderModule: GPUShaderModule | undefined
+	private gridVertexShaderModule: GPUShaderModule | undefined
+	private gridFragmentShaderModule: GPUShaderModule | undefined
+	private fullscreenVertexShaderModule: GPUShaderModule | undefined
+	private fullscreenFragmentShaderModule: GPUShaderModule | undefined
 	private rayGenComputeShaderModule: GPUShaderModule | undefined
 	private renderer: WebGPURenderer | undefined
 
@@ -28,21 +31,41 @@ export class WebGpuManager {
 		this.device = await adapter.requestDevice()
 		this.canvasFormat = navigator.gpu.getPreferredCanvasFormat()
 
-		// Shaders
-		this.vertexShaderModule = await loadShader(
+		// Raster shaders
+		this.rasterVertexShaderModule = await loadShader(
+			this.device,
+			"/shaders/rasterVertex.wgsl",
+			"Raster vertex shader"
+		)
+		this.rasterFragmentShaderModule = await loadShader(
+			this.device,
+			"/shaders/rasterFragment.wgsl",
+			"Raster fragment shader"
+		)
+		this.gridVertexShaderModule = await loadShader(
+			this.device,
+			"/shaders/gridVertex.wgsl",
+			"Grid vertex shader"
+		)
+		this.gridFragmentShaderModule = await loadShader(
+			this.device,
+			"/shaders/gridFragment.wgsl",
+			"Grid fragment shader"
+		)
+		this.fullscreenVertexShaderModule = await loadShader(
 			this.device,
 			"/shaders/vertex.wgsl",
-			"Vertex shader"
+			"Fullscreen vertex shader"
 		)
-		this.fragmentShaderModule = await loadShader(
+		this.fullscreenFragmentShaderModule = await loadShader(
 			this.device,
 			"/shaders/fragment.wgsl",
-			"Fragment shader"
+			"Fullscreen fragment shader"
 		)
 		this.rayGenComputeShaderModule = await loadShader(
 			this.device,
 			"/shaders/rayGenCompute.wgsl",
-			"Ray Generation Compute shader"
+			"Ray generation compute shader"
 		)
 
 		this.canvasContext = canvas.getContext("webgpu") as GPUCanvasContext
@@ -57,41 +80,108 @@ export class WebGpuManager {
 		world: World,
 		timeStepInputHandler: (deltaTime: number) => void
 	): WebGPURenderer {
-		// Pipeline
-		const vertexBufferLayout = {
-			arrayStride: 8,
-			attributes: [{ format: "float32x2", offset: 0, shaderLocation: 0 }],
+		const vertexBufferLayout: GPUVertexBufferLayout = {
+			arrayStride: 24,
+			stepMode: "vertex",
+			attributes: [
+				{ format: "float32x3", offset: 0, shaderLocation: 0 },
+				{ format: "float32x3", offset: 12, shaderLocation: 1 },
+			],
 		}
+
+		const instanceBufferLayout: GPUVertexBufferLayout = {
+			arrayStride: 32,
+			stepMode: "instance",
+			attributes: [
+				{ format: "float32x4", offset: 0, shaderLocation: 2 },
+				{ format: "float32x4", offset: 16, shaderLocation: 3 },
+			],
+		}
+
 		const renderPipeline = this.device.createRenderPipeline({
-			label: "Render pipeline",
+			label: "Raster sphere pipeline",
 			layout: "auto",
 			vertex: {
-				module: this.vertexShaderModule,
+				module: this.rasterVertexShaderModule,
 				entryPoint: "vertexMain",
-				buffers: [vertexBufferLayout],
+				buffers: [vertexBufferLayout, instanceBufferLayout],
 			},
 			fragment: {
-				module: this.fragmentShaderModule,
+				module: this.rasterFragmentShaderModule,
 				entryPoint: "fragmentMain",
 				targets: [{ format: this.canvasFormat }],
 			},
+			primitive: {
+				topology: "triangle-list",
+				cullMode: "back",
+				frontFace: "ccw",
+			},
+			depthStencil: {
+				format: "depth24plus",
+				depthWriteEnabled: true,
+				depthCompare: "less",
+			},
 		})
 
-		// Create storage texture for compute shader output
-		const canvasWidth = world.camera.viewportWidth
-		const canvasHeight = world.camera.viewportHeight
-		const storageTexture = this.device.createTexture({
-			size: [canvasWidth, canvasHeight],
-			format: "rgba8unorm",
-			usage:
-				GPUTextureUsage.STORAGE_BINDING |
-				GPUTextureUsage.TEXTURE_BINDING |
-				GPUTextureUsage.COPY_SRC |
-				GPUTextureUsage.RENDER_ATTACHMENT,
+		const gridVertexBufferLayout: GPUVertexBufferLayout = {
+			arrayStride: 24,
+			stepMode: "vertex",
+			attributes: [
+				{ format: "float32x3", offset: 0, shaderLocation: 0 },
+				{ format: "float32x3", offset: 12, shaderLocation: 1 },
+			],
+		}
+
+		const gridPipeline = this.device.createRenderPipeline({
+			label: "Raster grid pipeline",
+			layout: "auto",
+			vertex: {
+				module: this.gridVertexShaderModule,
+				entryPoint: "vertexMain",
+				buffers: [gridVertexBufferLayout],
+			},
+			fragment: {
+				module: this.gridFragmentShaderModule,
+				entryPoint: "fragmentMain",
+				targets: [{ format: this.canvasFormat }],
+			},
+			primitive: {
+				topology: "line-list",
+			},
+			depthStencil: {
+				format: "depth24plus",
+				depthWriteEnabled: false,
+				depthCompare: "less-equal",
+			},
 		})
 
-		// Create compute pipeline for ray generation
+		const fullscreenVertexBufferLayout: GPUVertexBufferLayout = {
+			arrayStride: 8,
+			attributes: [
+				{ format: "float32x2", offset: 0, shaderLocation: 0 },
+			],
+		}
+
+		const blitPipeline = this.device.createRenderPipeline({
+			label: "Raytrace presentation pipeline",
+			layout: "auto",
+			vertex: {
+				module: this.fullscreenVertexShaderModule,
+				entryPoint: "vertexMain",
+				buffers: [fullscreenVertexBufferLayout],
+			},
+			fragment: {
+				module: this.fullscreenFragmentShaderModule,
+				entryPoint: "fragmentMain",
+				targets: [{ format: this.canvasFormat }],
+			},
+			primitive: {
+				topology: "triangle-list",
+			},
+		})
+
 		const computePipeline = this.device.createComputePipeline({
+			label: "Raytrace compute pipeline",
 			layout: "auto",
 			compute: {
 				module: this.rayGenComputeShaderModule!,
@@ -103,8 +193,9 @@ export class WebGpuManager {
 			this.device,
 			this.canvasContext,
 			renderPipeline,
+			gridPipeline,
+			blitPipeline,
 			computePipeline,
-			storageTexture,
 			world,
 			timeStepInputHandler
 		)

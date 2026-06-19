@@ -2,7 +2,6 @@ import { InputManager } from "./InputManager"
 import { WebGpuManager } from "./webGpuManager"
 import { World } from "./world"
 import { WorldStateManager } from "./WorldStateManager"
-import { Camera } from "./camera"
 
 function setupControlPanelListeners(worldStateManager: WorldStateManager) {
 	// FOV slider
@@ -246,6 +245,29 @@ export const initMain = async () => {
 			}
 		}
 	)
+
+	const renderModeSelect = document.getElementById(
+		"render-mode"
+	) as HTMLSelectElement | null
+	if (renderModeSelect) {
+		renderModeSelect.value = renderer.getRenderMode()
+		renderModeSelect.addEventListener("change", (e) => {
+			const mode = (e.target as HTMLSelectElement).value as
+				| "raster"
+				| "raytrace"
+			renderer.setRenderMode(mode)
+		})
+	}
+
+	const showGridCheckbox = document.getElementById(
+		"show-grid"
+	) as HTMLInputElement | null
+	if (showGridCheckbox) {
+		showGridCheckbox.checked = renderer.getShowGrid()
+		showGridCheckbox.addEventListener("change", (e) => {
+			renderer.setShowGrid((e.target as HTMLInputElement).checked)
+		})
+	}
 
 	// Listen for window resize events
 	window.addEventListener("resize", () => {

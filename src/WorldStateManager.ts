@@ -62,11 +62,6 @@ export class WorldStateManager {
 		this.world.updateDirectionalLightUniform(directionVec)
 	}
 
-	controlPanelUpdateSphere(center: [number, number, number], radius: number) {
-		const centerVec = new Float32Array(center)
-		this.world.updateSphereUniform(centerVec, radius)
-	}
-
 	controlPanelUpdateCameraProps(
 		verticalFOV: number,
 		nearClip: number,

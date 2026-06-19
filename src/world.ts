@@ -1,6 +1,5 @@
 import { mat4, vec3 } from "gl-matrix"
 import { Camera } from "./camera"
-import { InputState } from "./InputManager"
 
 export class World {
 	static readonly MAX_SPHERES = 50
@@ -52,7 +51,7 @@ export class World {
 			.map((_, i) => ({ center: [0, 0, 0], radius: 1, exists: false, albedo: [1.0, 1.0, 1.0, 1.0] }))
 		this.spheres[0] = { center: [0, 0, 0], radius: 1, exists: true, albedo: [1.0, 0.0, 0.0, 1.0] }
 		this.spheres[1] = { center: [2, 3, -5], radius: 1, exists: true, albedo: [0.0, 1.0, 0.0, 1.0] }
-		this.spheres[2] = { center: [0, -30, 0], radius: 28, exists: true, albedo: [0.0, 0.0, 1.0, 1.0] }
+		// this.spheres[2] = { center: [0, -30, 0], radius: 28, exists: true, albedo: [0.0, 0.0, 1.0, 1.0] }
 		this.syncSpheresToGPU()
 		this.updateDirectionalLightUniform(vec3.fromValues(-1.0, -1.0, -1.0))
 	}
@@ -115,7 +114,7 @@ export class World {
 
 		// Directional light uniform buffer
 		this.directionalLightUniformBuffer = this.device.createBuffer({
-			size: 12, // 3 floats (direction)
+			size: 16, // vec3 + padding for uniform alignment
 			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 		})
 
@@ -210,12 +209,21 @@ export class World {
 			direction[0],
 			direction[1],
 			direction[2],
+			0,
 		])
 		this.device.queue.writeBuffer(
 			this.directionalLightUniformBuffer,
 			0,
 			lightData
 		)
+	}
+
+	getCameraUniformBuffer(): GPUBuffer {
+		return this.cameraUniformBuffer
+	}
+
+	getDirectionalLightUniformBuffer(): GPUBuffer {
+		return this.directionalLightUniformBuffer
 	}
 
 	getWorldGpuUniformBuffers(): GPUBuffer[] {
